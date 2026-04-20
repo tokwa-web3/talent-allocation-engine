@@ -4,13 +4,9 @@ export async function POST(req) {
   try {
     const profile = await req.json()
 
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return NextResponse.json({ error: 'API key missing' }, { status: 500 })
-    }
-
     const prompt = `You are the Talent Allocation Engine — an expert career intelligence system.
 
-A user has submitted their profile. Analyze it deeply and return the 5 best career paths for them based on:
+Analyze this profile and return the 5 best career paths based on:
 1. Their current skills
 2. Their psychology and personality type  
 3. Their location and local economy context
@@ -28,8 +24,8 @@ USER PROFILE:
 - Career Goal: ${profile.goals}
 - Target Monthly Income (USD): ${profile.salary}
 
-Return ONLY a valid JSON array (no markdown, no explanation, no backticks) with exactly 5 objects.
-Each object must have these exact keys:
+Return ONLY a valid JSON array with exactly 5 objects. No markdown, no backticks, no explanation — just the raw JSON array.
+Each object must have exactly these keys:
 {
   "title": "Job title",
   "category": "Industry category",
@@ -43,33 +39,26 @@ Each object must have these exact keys:
   "remoteViable": true
 }`
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-5',
-        max_tokens: 2000,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    })
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.7, maxOutputTokens: 2000 }
+        })
+      }
+    )
 
     if (!response.ok) {
       const errText = await response.text()
-      console.error('Anthropic API error:', errText)
-      return NextResponse.json({ error: 'Anthropic API failed', detail: errText }, { status: 500 })
+      console.error('Gemini API error:', errText)
+      return NextResponse.json({ error: 'Gemini API failed', detail: errText }, { status: 500 })
     }
 
     const data = await response.json()
-    
-    if (!data.content || !data.content[0]) {
-      return NextResponse.json({ error: 'Empty response from Claude' }, { status: 500 })
-    }
-
-    const text = data.content[0].text.trim()
+    const text = data.candidates[0].content.parts[0].text.trim()
     const cleaned = text.replace(/```json|```/g, '').trim()
     const matches = JSON.parse(cleaned)
 
