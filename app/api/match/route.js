@@ -4,6 +4,10 @@ export async function POST(req) {
   try {
     const profile = await req.json()
 
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return NextResponse.json({ error: 'API key missing' }, { status: 500 })
+    }
+
     const prompt = `You are the Talent Allocation Engine — an expert career intelligence system.
 
 A user has submitted their profile. Analyze it deeply and return the 5 best career paths for them based on:
@@ -24,17 +28,17 @@ USER PROFILE:
 - Career Goal: ${profile.goals}
 - Target Monthly Income (USD): ${profile.salary}
 
-Return ONLY a valid JSON array (no markdown, no explanation) with exactly 5 objects.
+Return ONLY a valid JSON array (no markdown, no explanation, no backticks) with exactly 5 objects.
 Each object must have these exact keys:
 {
   "title": "Job title",
   "category": "Industry category",
   "matchScore": 87,
-  "upsidePotential": "High/Medium/Low",
+  "upsidePotential": "High",
   "avgMonthlyUSD": 4500,
-  "demandTrend": "Growing/Stable/Declining",
+  "demandTrend": "Growing",
   "timeToTransition": "3-6 months",
-  "whyMatch": "2-3 sentence explanation of why this matches their profile",
+  "whyMatch": "2-3 sentence explanation",
   "topSkillsNeeded": ["skill1", "skill2", "skill3"],
   "remoteViable": true
 }`
@@ -53,14 +57,26 @@ Each object must have these exact keys:
       })
     })
 
+    if (!response.ok) {
+      const errText = await response.text()
+      console.error('Anthropic API error:', errText)
+      return NextResponse.json({ error: 'Anthropic API failed', detail: errText }, { status: 500 })
+    }
+
     const data = await response.json()
-    const text = data.content[0].text
-    const matches = JSON.parse(text)
+    
+    if (!data.content || !data.content[0]) {
+      return NextResponse.json({ error: 'Empty response from Claude' }, { status: 500 })
+    }
+
+    const text = data.content[0].text.trim()
+    const cleaned = text.replace(/```json|```/g, '').trim()
+    const matches = JSON.parse(cleaned)
 
     return NextResponse.json({ matches })
 
   } catch (error) {
     console.error('Match API error:', error)
-    return NextResponse.json({ error: 'Failed to generate matches' }, { status: 500 })
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
